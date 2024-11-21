@@ -20,4 +20,11 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="16dp"
         android:text="Zapisz" />
+    <Button
+        android:id="@+id/showButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Pokaż notatkę"
+        android:layout_marginTop="20dp"
+        android:layout_centerHorizontal="true"/>
 </LinearLayout>
