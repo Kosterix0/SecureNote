@@ -1,12 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:tools="http://schemas.android.com/tools">
+<resources>
 
-    <style name="Theme.SecureNotebook" parent="Theme.AppCompat.Light.DarkActionBar">
-        <item name="colorPrimary">@color/purple_500</item>
-        <item name="colorPrimaryDark">@color/purple_700</item>
-        <item name="colorAccent">@color/teal_200</item>
-        <item name="android:windowBackground">@color/background</item>
+    <!-- Użycie motywu AppCompat -->
+    <style name="Theme.SecureNotebook" parent="Theme.AppCompat.Light.NoActionBar">
+        <item name="android:windowBackground">@android:color/white</item>  <!-- Kolor tła -->
+        <item name="android:textColorPrimary">@android:color/black</item>  <!-- Kolor tekstu -->
     </style>
 
 </resources>
+
+
+
 

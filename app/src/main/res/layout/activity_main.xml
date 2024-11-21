@@ -9,17 +9,15 @@
     <EditText
         android:id="@+id/noteEditText"
         android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:hint="Wpisz notatkę..."
-        android:gravity="top|start"
+        android:layout_height="wrap_content"
+        android:hint="Wpisz notatkę"
         android:inputType="textMultiLine"
-        android:background="@android:color/white"
-        android:padding="8dp"/>
+        android:lines="5" />
 
     <Button
         android:id="@+id/saveButton"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Zapisz notatkę"/>
+        android:layout_marginTop="16dp"
+        android:text="Zapisz" />
 </LinearLayout>
