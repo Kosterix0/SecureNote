@@ -1,19 +1,17 @@
 package com.example.securenotebook
 
-import android.content.Context
 import android.os.Bundle
-import android.security.keystore.KeyGenParameterSpec
-import android.security.keystore.KeyProperties
 import android.widget.Button
 import android.widget.EditText
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import java.security.KeyStore
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
-import android.util.Base64
 import javax.crypto.spec.GCMParameterSpec
+import android.util.Base64
+import android.content.SharedPreferences
 
 class MainActivity : AppCompatActivity() {
 
@@ -21,114 +19,101 @@ class MainActivity : AppCompatActivity() {
     private lateinit var saveButton: Button
     private lateinit var showButton: Button
 
+    private lateinit var sharedPreferences: SharedPreferences
     private lateinit var secretKey: SecretKey
-
-    private val KEY_ALIAS = "myKeyAlias"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        // Inicjalizacja widoków
         noteEditText = findViewById(R.id.noteEditText)
         saveButton = findViewById(R.id.saveButton)
         showButton = findViewById(R.id.showButton)
 
-        secretKey = getSecretKeyFromKeystore()
+        // Inicjalizacja SharedPreferences
+        sharedPreferences = getSharedPreferences("SecureNotebook", MODE_PRIVATE)
 
+        // Generowanie klucza AES
+        secretKey = generateSecretKey()
+
+        // Obsługa przycisku "Zapisz notatkę"
         saveButton.setOnClickListener {
-            val note = noteEditText.text.toString()
-            if (note.isNotEmpty()) {
-                val encryptedNote = encrypt(note, secretKey)
-                saveNoteToSharedPreferences(encryptedNote)
-                Toast.makeText(this, "Notatka została zapisana!", Toast.LENGTH_SHORT).show()
-            } else {
-                Toast.makeText(this, "Proszę wpisać notatkę!", Toast.LENGTH_SHORT).show()
+            promptForPassword { password ->
+                val note = noteEditText.text.toString()
+                if (note.isNotEmpty()) {
+                    val encryptedNote = encrypt(note, password)
+                    sharedPreferences.edit().putString("encryptedNote", encryptedNote).apply()
+                    Toast.makeText(this, "Notatka zapisana!", Toast.LENGTH_SHORT).show()
+                    noteEditText.text.clear()
+                } else {
+                    Toast.makeText(this, "Nie można zapisać pustej notatki!", Toast.LENGTH_SHORT).show()
+                }
             }
         }
 
+        // Obsługa przycisku "Pokaż notatkę"
         showButton.setOnClickListener {
-            val encryptedNote = loadNoteFromSharedPreferences()
-            if (encryptedNote != null) {
-                val decryptedNote = decrypt(encryptedNote, secretKey)
-                noteEditText.setText(decryptedNote)
-                Toast.makeText(this, "Notatka została wyświetlona!", Toast.LENGTH_SHORT).show()
-            } else {
-                Toast.makeText(this, "Brak zapisanej notatki", Toast.LENGTH_SHORT).show()
+            promptForPassword { password ->
+                val encryptedNote = sharedPreferences.getString("encryptedNote", null)
+                if (encryptedNote != null) {
+                    try {
+                        val decryptedNote = decrypt(encryptedNote, password)
+                        noteEditText.setText(decryptedNote)
+                    } catch (e: Exception) {
+                        Toast.makeText(this, "Nieprawidłowe hasło!", Toast.LENGTH_SHORT).show()
+                    }
+                } else {
+                    Toast.makeText(this, "Brak zapisanej notatki!", Toast.LENGTH_SHORT).show()
+                }
             }
         }
     }
 
-    private fun getSecretKeyFromKeystore(): SecretKey {
-        val keyStore = KeyStore.getInstance("AndroidKeyStore")
-        keyStore.load(null)
-        val existingKey = keyStore.getEntry(KEY_ALIAS, null)
-        return if (existingKey == null) {
-            val keyGenerator = KeyGenerator.getInstance("AES", "AndroidKeyStore")
-            keyGenerator.init(
-                KeyGenParameterSpec.Builder(KEY_ALIAS, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
-                    .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-                    .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-                    .build()
-            )
-            keyGenerator.generateKey()
-        } else {
-            (existingKey as KeyStore.SecretKeyEntry).secretKey
-        }
+    // Generowanie klucza AES
+    private fun generateSecretKey(): SecretKey {
+        val keyGenerator = KeyGenerator.getInstance("AES")
+        keyGenerator.init(256)
+        return keyGenerator.generateKey()
     }
 
-    private fun encrypt(data: String, secretKey: SecretKey): String {
+    // Szyfrowanie notatki
+    private fun encrypt(data: String, password: String): String {
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-
-        // System Keystore automatycznie generuje IV
-        cipher.init(Cipher.ENCRYPT_MODE, secretKey)
-
+        val spec = GCMParameterSpec(128, password.toByteArray().copyOf(12)) // IV generowane na podstawie hasła
+        cipher.init(Cipher.ENCRYPT_MODE, secretKey, spec)
         val encryptedBytes = cipher.doFinal(data.toByteArray())
-
-        // Zapisz wygenerowane IV do SharedPreferences
-        val iv = cipher.iv
-        saveIvToSharedPreferences(iv)
-
         return Base64.encodeToString(encryptedBytes, Base64.DEFAULT)
     }
 
-    private fun decrypt(encryptedData: String, secretKey: SecretKey): String {
+    // Odszyfrowanie notatki
+    private fun decrypt(encryptedData: String, password: String): String {
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-
-        // Pobierz zapisane IV z SharedPreferences
-        val iv = loadIvFromSharedPreferences()
-        val gcmSpec = GCMParameterSpec(128, iv) // Używamy IV zapisane wcześniej
-
-        cipher.init(Cipher.DECRYPT_MODE, secretKey, gcmSpec)
-
+        val spec = GCMParameterSpec(128, password.toByteArray().copyOf(12)) // IV generowane na podstawie hasła
+        cipher.init(Cipher.DECRYPT_MODE, secretKey, spec)
         val encryptedBytes = Base64.decode(encryptedData, Base64.DEFAULT)
         val decryptedBytes = cipher.doFinal(encryptedBytes)
-
         return String(decryptedBytes)
     }
 
-    private fun saveIvToSharedPreferences(iv: ByteArray) {
-        val sharedPreferences = getSharedPreferences("SecureNotes", Context.MODE_PRIVATE)
-        val editor = sharedPreferences.edit()
-        editor.putString("iv", Base64.encodeToString(iv, Base64.DEFAULT)) // Zapisz IV
-        editor.apply()
-    }
-
-    private fun loadIvFromSharedPreferences(): ByteArray {
-        val sharedPreferences = getSharedPreferences("SecureNotes", Context.MODE_PRIVATE)
-        val ivBase64 = sharedPreferences.getString("iv", null)
-        return Base64.decode(ivBase64, Base64.DEFAULT)
-    }
-
-    private fun saveNoteToSharedPreferences(encryptedNote: String) {
-        val sharedPreferences = getSharedPreferences("SecureNotes", Context.MODE_PRIVATE)
-        val editor = sharedPreferences.edit()
-        editor.putString("encrypted_note", encryptedNote)
-        editor.apply()
-    }
-
-    private fun loadNoteFromSharedPreferences(): String? {
-        val sharedPreferences = getSharedPreferences("SecureNotes", Context.MODE_PRIVATE)
-        return sharedPreferences.getString("encrypted_note", null)
+    // Okno dialogowe do wprowadzenia hasła
+    private fun promptForPassword(callback: (String) -> Unit) {
+        val passwordInput = EditText(this)
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Wprowadź hasło")
+            .setView(passwordInput)
+            .setPositiveButton("OK") { _, _ ->
+                val password = passwordInput.text.toString()
+                if (password.isNotEmpty()) {
+                    callback(password)
+                } else {
+                    Toast.makeText(this, "Hasło nie może być puste!", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("Anuluj", null)
+            .create()
+        dialog.show()
     }
 }
+
 
