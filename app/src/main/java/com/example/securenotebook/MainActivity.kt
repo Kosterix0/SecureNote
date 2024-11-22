@@ -24,6 +24,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var noteEditText: EditText
     private lateinit var saveButton: Button
     private lateinit var showButton: Button
+    private lateinit var changePasswordButton: Button // NOWY KOD
     private lateinit var encryptedSharedPreferences: EncryptedSharedPreferences
 
     private val PASSWORD_KEY = "userPassword"
@@ -42,6 +43,7 @@ class MainActivity : AppCompatActivity() {
         noteEditText = findViewById(R.id.noteEditText)
         saveButton = findViewById(R.id.saveButton)
         showButton = findViewById(R.id.showButton)
+        changePasswordButton = findViewById(R.id.changePasswordButton) // NOWY KOD
 
         // Tworzenie EncryptedSharedPreferences
         val masterKey = MasterKey.Builder(this)
@@ -54,6 +56,35 @@ class MainActivity : AppCompatActivity() {
             EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
             EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
         ) as EncryptedSharedPreferences
+
+        // Obsługa przycisku "Zmień hasło" - NOWY KOD
+        changePasswordButton.setOnClickListener {
+            promptForPassword { currentPassword ->
+                val savedHashedPassword = encryptedSharedPreferences.getString(PASSWORD_KEY, null)
+                val saltBase64 = encryptedSharedPreferences.getString(SALT_KEY, null)
+
+                if (savedHashedPassword != null && saltBase64 != null) {
+                    val salt = Base64.decode(saltBase64, Base64.DEFAULT)
+                    val hashedInputPassword = hashPassword(currentPassword, salt)
+
+                    if (hashedInputPassword == savedHashedPassword) {
+                        promptForNewPassword { newPassword ->
+                            val newSalt = generateSalt()
+                            val hashedNewPassword = hashPassword(newPassword, newSalt)
+                            encryptedSharedPreferences.edit()
+                                .putString(PASSWORD_KEY, hashedNewPassword)
+                                .putString(SALT_KEY, Base64.encodeToString(newSalt, Base64.DEFAULT))
+                                .apply()
+                            Toast.makeText(this, "Hasło zostało zmienione!", Toast.LENGTH_SHORT).show()
+                        }
+                    } else {
+                        Toast.makeText(this, "Błędne aktualne hasło!", Toast.LENGTH_SHORT).show()
+                    }
+                } else {
+                    Toast.makeText(this, "Nie ustawiono jeszcze hasła.", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
 
         // Obsługa przycisku "Zapisz notatkę"
         saveButton.setOnClickListener {

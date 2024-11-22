@@ -26,6 +26,14 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="Pokaż notatkę" />
+    <Button
+        android:id="@+id/changePasswordButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Zmień hasło"
+        android:layout_marginTop="16dp"
+        android:layout_centerHorizontal="true"/>
+
 </LinearLayout>
 
 
