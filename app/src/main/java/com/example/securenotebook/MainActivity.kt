@@ -13,6 +13,8 @@ import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
+import javax.crypto.spec.SecretKeySpec
+import java.security.SecureRandom
 
 class MainActivity : AppCompatActivity() {
 
@@ -20,6 +22,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var saveButton: Button
     private lateinit var showButton: Button
     private lateinit var secretKey: SecretKey
+    private lateinit var encryptedSharedPreferences: EncryptedSharedPreferences
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -35,17 +38,17 @@ class MainActivity : AppCompatActivity() {
             .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
             .build()
 
-// Tworzenie EncryptedSharedPreferences
-        val encryptedSharedPreferences = EncryptedSharedPreferences.create(
+        // Tworzenie EncryptedSharedPreferences
+        encryptedSharedPreferences = EncryptedSharedPreferences.create(
             this, // context
             "secret_shared_prefs", // nazwa pliku
             masterKey, // master key
             EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV, // szyfrowanie kluczy
             EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM // szyfrowanie wartości
-        )
+        ) as EncryptedSharedPreferences
 
-        // Generowanie klucza AES do szyfrowania danych
-        secretKey = generateSecretKey()
+        // Inicjalizacja lub załadowanie klucza szyfrującego
+        secretKey = getOrCreateSecretKey()
 
         // Obsługa przycisku "Zapisz notatkę"
         saveButton.setOnClickListener {
@@ -53,7 +56,7 @@ class MainActivity : AppCompatActivity() {
             if (note.isNotEmpty()) {
                 promptForPassword { password ->
                     try {
-                        val encryptedNote = encrypt(note, password)
+                        val encryptedNote = encrypt(note)
                         encryptedSharedPreferences.edit()
                             .putString("encryptedNote", encryptedNote)
                             .apply()
@@ -72,9 +75,9 @@ class MainActivity : AppCompatActivity() {
         showButton.setOnClickListener {
             val encryptedNote = encryptedSharedPreferences.getString("encryptedNote", null)
             if (encryptedNote != null) {
-                promptForPassword { password ->
+                promptForPassword {  password ->
                     try {
-                        val decryptedNote = decrypt(encryptedNote, password)
+                        val decryptedNote = decrypt(encryptedNote)
                         noteEditText.setText(decryptedNote)
                         Toast.makeText(this, "Notatka wyświetlona!", Toast.LENGTH_SHORT).show()
                     } catch (e: Exception) {
@@ -87,6 +90,27 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // Pobieranie lub generowanie klucza szyfrującego
+    private fun getOrCreateSecretKey(): SecretKey {
+        val keyAlias = "secureNotebookKey"
+        val encryptedKey = encryptedSharedPreferences.getString(keyAlias, null)
+
+        return if (encryptedKey != null) {
+            // Klucz już istnieje, odszyfruj i zwróć
+            val keyBytes = Base64.decode(encryptedKey, Base64.DEFAULT)
+            SecretKeySpec(keyBytes, "AES")
+        } else {
+            // Klucz nie istnieje, wygeneruj nowy
+            val newKey = generateSecretKey()
+            val keyBytes = newKey.encoded
+            val encryptedKey = Base64.encodeToString(keyBytes, Base64.DEFAULT)
+            encryptedSharedPreferences.edit()
+                .putString(keyAlias, encryptedKey)
+                .apply()
+            newKey
+        }
+    }
+
     // Generowanie klucza AES
     private fun generateSecretKey(): SecretKey {
         val keyGenerator = KeyGenerator.getInstance("AES")
@@ -95,22 +119,30 @@ class MainActivity : AppCompatActivity() {
     }
 
     // Szyfrowanie notatki
-    private fun encrypt(data: String, password: String): String {
+    private fun encrypt(data: String): String {
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        val iv = password.toByteArray().copyOf(12) // Użycie hasła jako IV
+        val iv = ByteArray(12) // IV o długości 12 bajtów
+        SecureRandom().nextBytes(iv)
         val spec = GCMParameterSpec(128, iv)
         cipher.init(Cipher.ENCRYPT_MODE, secretKey, spec)
         val encryptedBytes = cipher.doFinal(data.toByteArray())
-        return Base64.encodeToString(encryptedBytes, Base64.DEFAULT)
+
+        // Dołącz IV do szyfrowanej wiadomości
+        val combined = iv + encryptedBytes
+        return Base64.encodeToString(combined, Base64.DEFAULT)
     }
 
     // Odszyfrowanie notatki
-    private fun decrypt(encryptedData: String, password: String): String {
+    private fun decrypt(encryptedData: String): String {
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        val iv = password.toByteArray().copyOf(12) // Użycie hasła jako IV
+        val combined = Base64.decode(encryptedData, Base64.DEFAULT)
+
+        // Oddziel IV od danych
+        val iv = combined.copyOfRange(0, 12)
+        val encryptedBytes = combined.copyOfRange(12, combined.size)
+
         val spec = GCMParameterSpec(128, iv)
         cipher.init(Cipher.DECRYPT_MODE, secretKey, spec)
-        val encryptedBytes = Base64.decode(encryptedData, Base64.DEFAULT)
         val decryptedBytes = cipher.doFinal(encryptedBytes)
         return String(decryptedBytes)
     }
