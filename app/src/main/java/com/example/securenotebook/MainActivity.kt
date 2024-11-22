@@ -59,7 +59,7 @@ class MainActivity : AppCompatActivity() {
 
         // Obsługa przycisku "Zmień hasło" - NOWY KOD
         changePasswordButton.setOnClickListener {
-            promptForPassword { currentPassword ->
+            handlePassword { currentPassword ->
                 val savedHashedPassword = encryptedSharedPreferences.getString(PASSWORD_KEY, null)
                 val saltBase64 = encryptedSharedPreferences.getString(SALT_KEY, null)
 
@@ -68,6 +68,7 @@ class MainActivity : AppCompatActivity() {
                     val hashedInputPassword = hashPassword(currentPassword, salt)
 
                     if (hashedInputPassword == savedHashedPassword) {
+                        // Poproś o nowe hasło
                         promptForNewPassword { newPassword ->
                             val newSalt = generateSalt()
                             val hashedNewPassword = hashPassword(newPassword, newSalt)
@@ -78,7 +79,8 @@ class MainActivity : AppCompatActivity() {
                             Toast.makeText(this, "Hasło zostało zmienione!", Toast.LENGTH_SHORT).show()
                         }
                     } else {
-                        Toast.makeText(this, "Błędne aktualne hasło!", Toast.LENGTH_SHORT).show()
+                        // Obsługa błędnego hasła już jest w handlePassword
+                        Toast.makeText(this, "Nieprawidłowe hasło!", Toast.LENGTH_SHORT).show()
                     }
                 } else {
                     Toast.makeText(this, "Nie ustawiono jeszcze hasła.", Toast.LENGTH_SHORT).show()
