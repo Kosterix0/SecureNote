@@ -1,6 +1,8 @@
 package com.example.securenotebook
 
 import android.os.Bundle
+import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyProperties
 import android.util.Base64
 import android.widget.Button
 import android.widget.EditText
@@ -9,25 +11,28 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import java.security.KeyStore
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
-import javax.crypto.spec.PBEKeySpec
-import javax.crypto.spec.SecretKeySpec
 import java.security.SecureRandom
-import javax.crypto.SecretKeyFactory
+import javax.crypto.spec.PBEKeySpec
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var noteEditText: EditText
     private lateinit var saveButton: Button
     private lateinit var showButton: Button
-    private lateinit var secretKey: SecretKey
     private lateinit var encryptedSharedPreferences: EncryptedSharedPreferences
 
     private val PASSWORD_KEY = "userPassword"
     private val SALT_KEY = "passwordSalt"
+    private val FAILED_ATTEMPTS_KEY = "failedAttempts"
+    private val LOCK_TIMESTAMP_KEY = "lockTimestamp"
+    private val MAX_ATTEMPTS = 3
+    private val LOCK_TIME_MILLIS = 60_000L // 1 minuta
+    private val KEY_ALIAS = "secureKeyAlias" // alias do przechowywania klucza w Keystore
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -49,9 +54,6 @@ class MainActivity : AppCompatActivity() {
             EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
             EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
         ) as EncryptedSharedPreferences
-
-        // Inicjalizacja lub załadowanie klucza szyfrującego
-        secretKey = getOrCreateSecretKey()
 
         // Obsługa przycisku "Zapisz notatkę"
         saveButton.setOnClickListener {
@@ -97,6 +99,15 @@ class MainActivity : AppCompatActivity() {
     private fun handlePassword(callback: (String) -> Unit) {
         val savedHashedPassword = encryptedSharedPreferences.getString(PASSWORD_KEY, null)
         val saltBase64 = encryptedSharedPreferences.getString(SALT_KEY, null)
+        val failedAttempts = encryptedSharedPreferences.getInt(FAILED_ATTEMPTS_KEY, 0)
+        val lockTimestamp = encryptedSharedPreferences.getLong(LOCK_TIMESTAMP_KEY, 0)
+        val currentTime = System.currentTimeMillis()
+
+        if (lockTimestamp > currentTime) {
+            val remainingTime = (lockTimestamp - currentTime) / 1000
+            Toast.makeText(this, "Zablokowano. Spróbuj ponownie za ${remainingTime}s.", Toast.LENGTH_SHORT).show()
+            return
+        }
 
         if (savedHashedPassword == null || saltBase64 == null) {
             // Jeśli hasło nie jest ustawione, poproś o ustawienie nowego
@@ -106,6 +117,7 @@ class MainActivity : AppCompatActivity() {
                 encryptedSharedPreferences.edit()
                     .putString(PASSWORD_KEY, hashedPassword)
                     .putString(SALT_KEY, Base64.encodeToString(salt, Base64.DEFAULT))
+                    .putInt(FAILED_ATTEMPTS_KEY, 0) // Reset prób
                     .apply()
                 callback(newPassword)
             }
@@ -115,9 +127,25 @@ class MainActivity : AppCompatActivity() {
                 val salt = Base64.decode(saltBase64, Base64.DEFAULT)
                 val hashedInputPassword = hashPassword(enteredPassword, salt)
                 if (hashedInputPassword == savedHashedPassword) {
+                    encryptedSharedPreferences.edit()
+                        .putInt(FAILED_ATTEMPTS_KEY, 0) // Reset prób
+                        .apply()
                     callback(enteredPassword)
                 } else {
-                    Toast.makeText(this, "Nieprawidłowe hasło!", Toast.LENGTH_SHORT).show()
+                    val newFailedAttempts = failedAttempts + 1
+                    if (newFailedAttempts >= MAX_ATTEMPTS) {
+                        val lockUntil = currentTime + LOCK_TIME_MILLIS
+                        encryptedSharedPreferences.edit()
+                            .putLong(LOCK_TIMESTAMP_KEY, lockUntil)
+                            .putInt(FAILED_ATTEMPTS_KEY, 0) // Reset prób
+                            .apply()
+                        Toast.makeText(this, "Zablokowano na 1 minutę!", Toast.LENGTH_SHORT).show()
+                    } else {
+                        encryptedSharedPreferences.edit()
+                            .putInt(FAILED_ATTEMPTS_KEY, newFailedAttempts)
+                            .apply()
+                        Toast.makeText(this, "Nieprawidłowe hasło! Próba $newFailedAttempts z $MAX_ATTEMPTS.", Toast.LENGTH_SHORT).show()
+                    }
                 }
             }
         }
@@ -126,7 +154,7 @@ class MainActivity : AppCompatActivity() {
     // Szyfrowanie hasła PBKDF2
     private fun hashPassword(password: String, salt: ByteArray, iterations: Int = 10000, keyLength: Int = 256): String {
         val keySpec = PBEKeySpec(password.toCharArray(), salt, iterations, keyLength)
-        val keyFactory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
+        val keyFactory = javax.crypto.SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
         val hashedBytes = keyFactory.generateSecret(keySpec).encoded
         return Base64.encodeToString(hashedBytes, Base64.DEFAULT)
     }
@@ -176,59 +204,63 @@ class MainActivity : AppCompatActivity() {
         dialog.show()
     }
 
-    // Szyfrowanie danych
+    // Szyfrowanie notatki AES/GCM
     private fun encrypt(data: String): String {
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        val iv = ByteArray(12)
-        SecureRandom().nextBytes(iv)
-        val spec = GCMParameterSpec(128, iv)
-        cipher.init(Cipher.ENCRYPT_MODE, secretKey, spec)
-        val encryptedBytes = cipher.doFinal(data.toByteArray())
+        cipher.init(Cipher.ENCRYPT_MODE, getOrCreateSecretKey())
 
-        val combined = iv + encryptedBytes
-        return Base64.encodeToString(combined, Base64.DEFAULT)
+        val iv = cipher.iv // Pobieramy IV wygenerowane przez system
+        val encryptedData = cipher.doFinal(data.toByteArray())
+
+        // Łączymy IV z zaszyfrowanymi danymi i kodujemy to w Base64
+        val output = iv + encryptedData
+        return Base64.encodeToString(output, Base64.DEFAULT)
     }
 
-    // Odszyfrowywanie danych
-    private fun decrypt(encryptedData: String): String {
+    // Deszyfrowanie notatki AES/GCM
+    private fun decrypt(data: String): String {
+        val decoded = Base64.decode(data, Base64.DEFAULT)
+
+        // Rozdzielenie IV i zaszyfrowanych danych
+        val iv = decoded.copyOfRange(0, 12)
+        val encryptedData = decoded.copyOfRange(12, decoded.size)
+
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        val combined = Base64.decode(encryptedData, Base64.DEFAULT)
-
-        val iv = combined.copyOfRange(0, 12)
-        val encryptedBytes = combined.copyOfRange(12, combined.size)
-
         val spec = GCMParameterSpec(128, iv)
-        cipher.init(Cipher.DECRYPT_MODE, secretKey, spec)
-        val decryptedBytes = cipher.doFinal(encryptedBytes)
+        cipher.init(Cipher.DECRYPT_MODE, getOrCreateSecretKey(), spec)
+
+        val decryptedBytes = cipher.doFinal(encryptedData)
         return String(decryptedBytes)
     }
 
-    // Pobieranie lub generowanie klucza szyfrującego
+    // Pobranie lub wygenerowanie klucza szyfrowania z Android Keystore
     private fun getOrCreateSecretKey(): SecretKey {
-        val keyAlias = "secureNotebookKey"
-        val encryptedKey = encryptedSharedPreferences.getString(keyAlias, null)
+        val keyStore = KeyStore.getInstance("AndroidKeyStore").apply {
+            load(null)
+        }
 
-        return if (encryptedKey != null) {
-            val keyBytes = Base64.decode(encryptedKey, Base64.DEFAULT)
-            SecretKeySpec(keyBytes, "AES")
+        // Sprawdzanie, czy klucz już istnieje
+        return if (keyStore.containsAlias(KEY_ALIAS)) {
+            (keyStore.getEntry(KEY_ALIAS, null) as KeyStore.SecretKeyEntry).secretKey
         } else {
-            val newKey = generateSecretKey()
-            val keyBytes = newKey.encoded
-            val encryptedKey = Base64.encodeToString(keyBytes, Base64.DEFAULT)
-            encryptedSharedPreferences.edit()
-                .putString(keyAlias, encryptedKey)
-                .apply()
-            newKey
+            // Generowanie nowego klucza, jeśli nie istnieje
+            val keyGenerator = KeyGenerator.getInstance("AES", "AndroidKeyStore")
+            val keyGenSpec = KeyGenParameterSpec.Builder(
+                KEY_ALIAS,
+                KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
+            )
+                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                .setKeySize(256)
+                .build()
+            keyGenerator.init(keyGenSpec)
+            keyGenerator.generateKey()
         }
     }
-
-    // Generowanie klucza AES
-    private fun generateSecretKey(): SecretKey {
-        val keyGenerator = KeyGenerator.getInstance("AES")
-        keyGenerator.init(256)
-        return keyGenerator.generateKey()
-    }
 }
+
+
+
 
 
 
