@@ -24,7 +24,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var noteEditText: EditText
     private lateinit var saveButton: Button
     private lateinit var showButton: Button
-    private lateinit var changePasswordButton: Button // NOWY KOD
+    private lateinit var changePasswordButton: Button
     private lateinit var encryptedSharedPreferences: EncryptedSharedPreferences
 
     private val PASSWORD_KEY = "userPassword"
@@ -39,13 +39,13 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // Inicjalizacja widoków
+       // widoki
         noteEditText = findViewById(R.id.noteEditText)
         saveButton = findViewById(R.id.saveButton)
         showButton = findViewById(R.id.showButton)
         changePasswordButton = findViewById(R.id.changePasswordButton) // NOWY KOD
 
-        // Tworzenie EncryptedSharedPreferences
+        // masterkey i encryptedsharedpreferences
         val masterKey = MasterKey.Builder(this)
             .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
             .build()
@@ -57,7 +57,7 @@ class MainActivity : AppCompatActivity() {
             EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
         ) as EncryptedSharedPreferences
 
-        // Obsługa przycisku "Zmień hasło" - NOWY KOD
+        // zmiana hasła
         changePasswordButton.setOnClickListener {
             handlePassword { currentPassword ->
                 val savedHashedPassword = encryptedSharedPreferences.getString(PASSWORD_KEY, null)
@@ -88,7 +88,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Obsługa przycisku "Zapisz notatkę"
+        // zapis notatki
         saveButton.setOnClickListener {
             handlePassword { password ->
                 val note = noteEditText.text.toString()
@@ -109,7 +109,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Obsługa przycisku "Pokaż notatkę"
+        // pokaz notatke
         showButton.setOnClickListener {
             handlePassword { password ->
                 val encryptedNote = encryptedSharedPreferences.getString("encryptedNote", null)
@@ -128,7 +128,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // Obsługa ustawiania i weryfikacji hasła
+    // haslo
     private fun handlePassword(callback: (String) -> Unit) {
         val savedHashedPassword = encryptedSharedPreferences.getString(PASSWORD_KEY, null)
         val saltBase64 = encryptedSharedPreferences.getString(SALT_KEY, null)
@@ -143,7 +143,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         if (savedHashedPassword == null || saltBase64 == null) {
-            // Jeśli hasło nie jest ustawione, poproś o ustawienie nowego
+            //jesli nie ma to nowe
             promptForNewPassword { newPassword ->
                 val salt = generateSalt()
                 val hashedPassword = hashPassword(newPassword, salt)
@@ -155,7 +155,7 @@ class MainActivity : AppCompatActivity() {
                 callback(newPassword)
             }
         } else {
-            // Jeśli hasło jest ustawione, poproś o weryfikację
+            // jesli haslo jest to weryfikacja
             promptForPassword { enteredPassword ->
                 val salt = Base64.decode(saltBase64, Base64.DEFAULT)
                 val hashedInputPassword = hashPassword(enteredPassword, salt)
@@ -184,7 +184,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // Szyfrowanie hasła PBKDF2
+    // haslo PBKDF2
     private fun hashPassword(password: String, salt: ByteArray, iterations: Int = 10000, keyLength: Int = 256): String {
         val keySpec = PBEKeySpec(password.toCharArray(), salt, iterations, keyLength)
         val keyFactory = javax.crypto.SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
@@ -192,14 +192,14 @@ class MainActivity : AppCompatActivity() {
         return Base64.encodeToString(hashedBytes, Base64.DEFAULT)
     }
 
-    // Generowanie soli
+    // salt
     private fun generateSalt(): ByteArray {
         val salt = ByteArray(16)
         SecureRandom().nextBytes(salt)
         return salt
     }
 
-    // Okno dialogowe do wprowadzenia nowego hasła
+    // okno do hasla
     private fun promptForNewPassword(callback: (String) -> Unit) {
         val passwordInput = EditText(this)
         val dialog = AlertDialog.Builder(this)
@@ -218,7 +218,6 @@ class MainActivity : AppCompatActivity() {
         dialog.show()
     }
 
-    // Okno dialogowe do podania istniejącego hasła
     private fun promptForPassword(callback: (String) -> Unit) {
         val passwordInput = EditText(this)
         val dialog = AlertDialog.Builder(this)
@@ -237,7 +236,7 @@ class MainActivity : AppCompatActivity() {
         dialog.show()
     }
 
-    // Szyfrowanie notatki AES/GCM
+    // notatka AES/GCM
     private fun encrypt(data: String): String {
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.ENCRYPT_MODE, getOrCreateSecretKey())
@@ -250,11 +249,9 @@ class MainActivity : AppCompatActivity() {
         return Base64.encodeToString(output, Base64.DEFAULT)
     }
 
-    // Deszyfrowanie notatki AES/GCM
+
     private fun decrypt(data: String): String {
         val decoded = Base64.decode(data, Base64.DEFAULT)
-
-        // Rozdzielenie IV i zaszyfrowanych danych
         val iv = decoded.copyOfRange(0, 12)
         val encryptedData = decoded.copyOfRange(12, decoded.size)
 
@@ -266,17 +263,16 @@ class MainActivity : AppCompatActivity() {
         return String(decryptedBytes)
     }
 
-    // Pobranie lub wygenerowanie klucza szyfrowania z Android Keystore
+    // pobieranie klucza z android keystore
     private fun getOrCreateSecretKey(): SecretKey {
         val keyStore = KeyStore.getInstance("AndroidKeyStore").apply {
             load(null)
         }
 
-        // Sprawdzanie, czy klucz już istnieje
+        // jesli istnieje to zwracamy jesli nie to tworzymy nowy
         return if (keyStore.containsAlias(KEY_ALIAS)) {
             (keyStore.getEntry(KEY_ALIAS, null) as KeyStore.SecretKeyEntry).secretKey
         } else {
-            // Generowanie nowego klucza, jeśli nie istnieje
             val keyGenerator = KeyGenerator.getInstance("AES", "AndroidKeyStore")
             val keyGenSpec = KeyGenParameterSpec.Builder(
                 KEY_ALIAS,
