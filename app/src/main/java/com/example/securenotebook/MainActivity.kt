@@ -1,5 +1,4 @@
 package com.example.securenotebook
-
 import android.os.Bundle
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
@@ -46,6 +45,7 @@ class MainActivity : AppCompatActivity() {
     private val MAX_ATTEMPTS = 3
     private val LOCK_TIME_MILLIS = 60_000L // 1 minuta
     private val KEY_ALIAS = "secureKeyAlias" // alias do przechowywania klucza w Keystore
+    private val KEY_NAME = "keyBio"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -100,6 +100,7 @@ class MainActivity : AppCompatActivity() {
                     when (currentAction) {
                         Action.SAVE_NOTE -> saveNote()
                         Action.SHOW_NOTE -> showNote()
+                        Action.CHANGE_PASSWORD -> changePassword()
                         else -> Toast.makeText(applicationContext, "Nieznana akcja!", Toast.LENGTH_SHORT).show()
                     }
 
@@ -286,6 +287,7 @@ class MainActivity : AppCompatActivity() {
         return Base64.encodeToString(hashedBytes, Base64.DEFAULT)
     }
 
+
     // salt
     private fun generateSalt(): ByteArray {
         val salt = ByteArray(16)
@@ -381,6 +383,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+
     private fun saveNote() {
         val note = noteEditText.text.toString()
         if (note.isNotEmpty()) {
@@ -414,6 +417,18 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun changePassword() {
+                promptForNewPassword { newPassword ->
+                    val newSalt = generateSalt()
+                    val hashedNewPassword = hashPassword(newPassword, newSalt)
+                    encryptedSharedPreferences.edit()
+                        .putString(PASSWORD_KEY, hashedNewPassword)
+                        .putString(SALT_KEY, Base64.encodeToString(newSalt, Base64.DEFAULT))
+                        .apply()
+                    Toast.makeText(this, "Hasło zostało zmienione!", Toast.LENGTH_SHORT).show()
+                }
+    }
+
     private fun isLocked(): Boolean {
         val lockTimestamp = encryptedSharedPreferences.getLong(LOCK_TIMESTAMP_KEY, 0)
         val currentTime = System.currentTimeMillis()
@@ -431,6 +446,8 @@ class MainActivity : AppCompatActivity() {
             return true
         } else return false
     }
+
+
 }
 
 
