@@ -130,10 +130,8 @@ class MainActivity : AppCompatActivity() {
         // Consider integrating with the keystore to unlock cryptographic operations,
         // if needed by your app.
         saveButton.setOnClickListener {
-            if (isLockedBio()){
-                if (isLocked()){
-                    return@setOnClickListener
-                } else {
+            showAuthenticationChoiceDialog(
+                onPasswordSelected = {
                     handlePassword { password ->
                         val note = noteEditText.text.toString()
                         if (note.isNotEmpty()) {
@@ -151,17 +149,15 @@ class MainActivity : AppCompatActivity() {
                             Toast.makeText(this, "Nie można zapisać pustej notatki!", Toast.LENGTH_SHORT).show()
                         }
                     }
-                }
-            } else{
-            currentAction = Action.SAVE_NOTE
-            biometricPrompt.authenticate(promptInfo) }
+                },
+                onBiometricSelected = {
+                    currentAction = Action.SAVE_NOTE
+                    biometricPrompt.authenticate(promptInfo)  })
         }
 
         showButton.setOnClickListener {
-            if (isLockedBio()){
-                if (isLocked())
-                    return@setOnClickListener
-                else{
+            showAuthenticationChoiceDialog(
+                onPasswordSelected = {
                     handlePassword { password ->
                         val encryptedNote = encryptedSharedPreferences.getString("encryptedNote", null)
                         if (encryptedNote != null) {
@@ -176,17 +172,16 @@ class MainActivity : AppCompatActivity() {
                             Toast.makeText(this, "Brak zapisanej notatki!", Toast.LENGTH_SHORT).show()
                         }
                     }
-                }
-            } else{
+                },
+                onBiometricSelected = {
                 currentAction = Action.SHOW_NOTE
-                biometricPrompt.authenticate(promptInfo) }
+                biometricPrompt.authenticate(promptInfo) })
 
         }
+
         changePasswordButton.setOnClickListener {
-            if (isLockedBio()){
-                if(isLocked()){
-                    return@setOnClickListener
-                } else{
+            showAuthenticationChoiceDialog(
+                onPasswordSelected = {
                     handlePassword { currentPassword ->
                         val savedHashedPassword = encryptedSharedPreferences.getString(PASSWORD_KEY, null)
                         val saltBase64 = encryptedSharedPreferences.getString(SALT_KEY, null)
@@ -214,11 +209,11 @@ class MainActivity : AppCompatActivity() {
                             Toast.makeText(this, "Nie ustawiono jeszcze hasła.", Toast.LENGTH_SHORT).show()
                         }
                     }
-                }
+                },
 
-            } else{
-                currentAction = Action.CHANGE_PASSWORD
-                biometricPrompt.authenticate(promptInfo)}
+                onBiometricSelected = {
+                    currentAction = Action.CHANGE_PASSWORD
+                    biometricPrompt.authenticate(promptInfo)})
         }
     }
 
@@ -446,6 +441,20 @@ class MainActivity : AppCompatActivity() {
             return true
         } else return false
     }
+
+    private fun showAuthenticationChoiceDialog(onPasswordSelected: () -> Unit, onBiometricSelected: () -> Unit) {
+        val options = arrayOf("Hasło", "Biometria")
+        val builder = AlertDialog.Builder(this)
+        builder.setTitle("Wybierz metodę uwierzytelniania")
+        builder.setItems(options) { _, which ->
+            when (which) {
+                0 -> onPasswordSelected() // Wybrano hasło
+                1 -> onBiometricSelected() // Wybrano biometrię
+            }
+        }
+        builder.show()
+    }
+
 
 
 }
