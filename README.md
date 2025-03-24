@@ -1,7 +1,7 @@
 # 🔒 SecureNote
 SecureNote to aplikacja mobilna na Androida do bezpiecznego przechowywania notatek. Wykorzystuje szyfrowanie i zaawansowane mechanizmy ochrony danych.
 
-**Screenshots**:
+#Screenshots:
 ![mobile1](screenshots/mobile1.png)
 ![mobile1](screenshots/mobile2.png)
 ![mobile1](screenshots/mobile3.png)
